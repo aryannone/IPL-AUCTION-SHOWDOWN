@@ -20,7 +20,7 @@ export default function Results({ state, myUserId }) {
           <div className="mt-2">
             <div className="text-4xl">🏆</div>
             <div className="font-display text-5xl gold-text mt-1">{winnerName}</div>
-            <div className="text-white/50 text-sm mt-1">WINS THE BID WAR</div>
+            <div className="text-white/50 text-sm mt-1">WINS THE SHOWDOWN</div>
           </div>
         ) : (
           <div className="font-display text-4xl mt-2 text-white/70">DRAW</div>
