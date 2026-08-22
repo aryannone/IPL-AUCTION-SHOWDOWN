@@ -8,11 +8,18 @@ CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   display_name  TEXT NOT NULL,
   session_token TEXT UNIQUE NOT NULL,
+  roll_number   TEXT,
   is_admin      BOOLEAN NOT NULL DEFAULT FALSE,
   admin_password_hash TEXT,             -- only set for admin users
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Roll number is the durable login identity (format YYFTxxxxxx). Nullable so
+-- older test accounts created before this feature aren't broken; unique only
+-- among the rows that do have one.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS roll_number TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_roll_number ON users(roll_number) WHERE roll_number IS NOT NULL;
 
 -- ========================= PLAYERS (catalogue) =========================
 CREATE TABLE IF NOT EXISTS players (
