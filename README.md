@@ -1,4 +1,4 @@
-# PARADOX '26 — IPL BID WAR
+# IPL AUCTION SHOWDOWN — IPL BID WAR
 
 A real-time, server-authoritative 1v1 IPL-style auction game.
 
