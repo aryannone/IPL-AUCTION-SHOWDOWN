@@ -112,11 +112,44 @@ export default function AdminDashboard() {
 
       {tab === 'matches' && (
         <div className="glass rounded-xl divide-y divide-white/5">
+          {matches.length === 0 && <div className="p-6 text-center text-white/30 text-sm">No finished games yet.</div>}
           {matches.map((m) => (
-            <div key={m.id} className="p-3 flex justify-between text-sm">
-              <span>{m.room_code}</span>
-              <span className="text-white/40">{m.status}</span>
-              <span className="text-white/40">{new Date(m.created_at).toLocaleString()}</span>
+            <div key={m.id} className="p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-display text-lg tracking-widest">{m.room_code}</span>
+                <span className="text-white/40 text-xs">
+                  {m.finished_at ? new Date(m.finished_at).toLocaleString() : m.status}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(m.participants || []).map((p) => (
+                  <div
+                    key={p.userId}
+                    className={`rounded-lg px-3 py-2 text-sm flex justify-between items-center ${
+                      m.winner && m.winner.userId === p.userId ? 'bg-gold/10 border border-gold/40' : 'bg-white/5'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-semibold">
+                        {m.winner && m.winner.userId === p.userId && '🏆 '}
+                        {p.name}
+                      </div>
+                      <div className="text-white/40 text-xs tracking-widest">{p.rollNumber || '—'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-gold font-display text-lg">{p.finalScore ?? '—'}</div>
+                      <div className="text-white/30 text-[10px]">pts {p.playerPoints ?? '—'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {m.winner ? (
+                <div className="text-xs text-white/40 mt-2">
+                  Winner: <span className="text-gold">{m.winner.name}</span> ({m.winner.rollNumber})
+                </div>
+              ) : (
+                <div className="text-xs text-white/30 mt-2">No winner recorded (draw or abandoned).</div>
+              )}
             </div>
           ))}
         </div>
@@ -171,3 +204,4 @@ function Field({ label, value, onChange, type = 'text' }) {
     </label>
   );
 }
+
