@@ -75,15 +75,39 @@ router.delete('/players/:id', async (req, res) => {
   res.json({ player: rows[0] });
 });
 
-// GET /api/admin/matches — match history overview
+// GET /api/admin/matches — game history with participant names, roll numbers,
+// scores, and the winner clearly identified.
 router.get('/matches', async (req, res) => {
   const { rows } = await db.query(
-    `SELECT g.id, g.room_code, g.status, g.created_at, g.finished_at,
-            json_agg(json_build_object('userId', gr.user_id, 'score', gr.final_score, 'rank', gr.rank)) AS results
-     FROM games g LEFT JOIN game_results gr ON gr.game_id = g.id
-     GROUP BY g.id ORDER BY g.created_at DESC LIMIT 100`
+    `SELECT g.id, g.room_code, g.status, g.created_at, g.started_at, g.finished_at,
+            json_agg(
+              json_build_object(
+                'userId', u.id,
+                'name', u.display_name,
+                'rollNumber', u.roll_number,
+                'slot', gp.slot,
+                'finalScore', gr.final_score,
+                'playerPoints', gr.player_points,
+                'remainingBudgetLakh', gr.remaining_budget_lakh,
+                'rank', gr.rank
+              ) ORDER BY gp.slot
+            ) AS participants
+     FROM games g
+     JOIN game_participants gp ON gp.game_id = g.id
+     JOIN users u ON u.id = gp.user_id
+     LEFT JOIN game_results gr ON gr.game_id = g.id AND gr.user_id = u.id
+     WHERE g.status IN ('FINISHED', 'ABANDONED')
+     GROUP BY g.id
+     ORDER BY g.finished_at DESC NULLS LAST, g.created_at DESC
+     LIMIT 100`
   );
-  res.json({ games: rows });
+
+  const games = rows.map((g) => {
+    const winner = (g.participants || []).find((p) => p.rank === 1) || null;
+    return { ...g, winner };
+  });
+
+  res.json({ games });
 });
 
 module.exports = router;
