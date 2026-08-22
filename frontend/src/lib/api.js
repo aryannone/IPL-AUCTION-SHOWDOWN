@@ -28,7 +28,7 @@ async function request(path, { method = 'GET', body, token } = {}) {
 
 export const api = {
   BASE_URL,
-  register: (displayName) => request('/api/auth/register', { method: 'POST', body: { displayName } }),
+  register: (displayName, rollNumber) => request('/api/auth/register', { method: 'POST', body: { displayName, rollNumber } }),
   me: (token) => request('/api/auth/me', { token }),
   adminLogin: (token, password) => request('/api/auth/admin-login', { method: 'POST', token, body: { password } }),
 
