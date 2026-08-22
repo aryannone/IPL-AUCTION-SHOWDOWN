@@ -23,8 +23,8 @@ export function AuthProvider({ children }) {
     })();
   }, [token]);
 
-  const register = useCallback(async (displayName) => {
-    const { token, user } = await api.register(displayName);
+  const register = useCallback(async (displayName, rollNumber) => {
+    const { token, user } = await api.register(displayName, rollNumber);
     localStorage.setItem('p26_token', token);
     setToken(token);
     setUser(user);
