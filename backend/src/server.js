@@ -23,7 +23,7 @@ async function main() {
   attachSocket(io, gameManager);
 
   httpServer.listen(PORT, () => {
-    console.log(`PARADOX '26 backend listening on :${PORT}`);
+    console.log(`IPL AUCTION SHOWDOWN backend listening on :${PORT}`);
   });
 }
 
