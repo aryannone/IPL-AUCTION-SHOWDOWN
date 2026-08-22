@@ -48,7 +48,19 @@ export default function GameRoom() {
     socket.on('GAME_STARTED', (s) => { setState(s); setLastEvent({ type: 'GAME_STARTED' }); });
     socket.on('AUCTION_STARTED', (s) => setState(s));
     socket.on('PLAYER_DRAWN', (payload) => {
-      setState((prev) => prev ? { ...prev, currentRound: payload.round, currentPlayerId: payload.player.playerId, currentBidLakh: payload.currentBidLakh, currentBidderUserId: null, auctionEndsAt: payload.auctionEndsAt } : prev);
+      setState((prev) => prev ? {
+        ...prev,
+        currentRound: payload.round,
+        currentPlayerId: payload.player.playerId,
+        currentBidLakh: payload.currentBidLakh,
+        currentBidderUserId: null,
+        biddingStartsAt: payload.biddingStartsAt,
+        auctionEndsAt: payload.auctionEndsAt,
+        withdrawn: { 1: false, 2: false },
+      } : prev);
+      // A new round starting is the authoritative signal that any previous
+      // round's SOLD/UNSOLD banner is done being relevant — always clear it here
+      // rather than relying on a timer that can be pre-empted by this same event.
       setLastEvent({ type: 'PLAYER_DRAWN', payload });
     });
     socket.on('BID_UPDATED', (payload) => {
@@ -59,6 +71,10 @@ export default function GameRoom() {
       setLastEvent({ type: 'PLAYER_SOLD', payload });
     });
     socket.on('PLAYER_UNSOLD', (payload) => setLastEvent({ type: 'PLAYER_UNSOLD', payload }));
+    socket.on('PLAYER_WITHDREW', (payload) => {
+      setState((prev) => prev ? { ...prev, withdrawn: { ...prev.withdrawn, [payload.slot]: true } } : prev);
+      setLastEvent({ type: 'PLAYER_WITHDREW', payload });
+    });
     socket.on('GAME_FINISHED', (payload) => {
       setState((prev) => prev ? { ...prev, status: 'FINISHED', results: payload.results, winnerUserId: payload.winnerUserId } : prev);
     });
@@ -108,6 +124,7 @@ export default function GameRoom() {
       socket.off('BID_UPDATED');
       socket.off('PLAYER_SOLD');
       socket.off('PLAYER_UNSOLD');
+      socket.off('PLAYER_WITHDREW');
       socket.off('GAME_FINISHED');
       socket.off('GAME_ABANDONED');
       socket.off('PLAYER_CONNECTED');
@@ -124,6 +141,12 @@ export default function GameRoom() {
   const setReady = useCallback(() => {
     return new Promise((resolve) => {
       socketRef.current?.emit('PLAYER_READY', {}, (res) => resolve(res));
+    });
+  }, []);
+
+  const withdraw = useCallback(() => {
+    return new Promise((resolve) => {
+      socketRef.current?.emit('WITHDRAW_BID', {}, (res) => resolve(res));
     });
   }, []);
 
@@ -152,7 +175,7 @@ export default function GameRoom() {
       <ConnBanner status={connStatus} />
       {state.status === 'LOBBY' && <Lobby {...commonProps} onReady={setReady} />}
       {state.status === 'STRATEGY' && <Strategy {...commonProps} />}
-      {state.status === 'AUCTION' && <Auction {...commonProps} onBid={placeBid} lastEvent={lastEvent} />}
+      {state.status === 'AUCTION' && <Auction {...commonProps} onBid={placeBid} onWithdraw={withdraw} lastEvent={lastEvent} />}
       {state.status === 'FINISHED' && <Results {...commonProps} />}
       {state.status === 'ABANDONED' && (
         <div className="min-h-screen flex flex-col items-center justify-center text-center px-6">
