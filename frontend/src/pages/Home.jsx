@@ -51,11 +51,10 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
-        <div className="font-display text-6xl sm:text-7xl gold-text leading-none">PARADOX '26</div>
-        <div className="font-display text-2xl sm:text-3xl mt-2 tracking-[0.3em] text-white">IPL BID WAR</div>
+        <div className="font-display text-5xl sm:text-6xl gold-text leading-tight">IPL AUCTION SHOWDOWN</div>
         <div className="text-xs tracking-[0.4em] text-white/40 mt-2">1V1 AUCTION</div>
         <p className="text-white/60 max-w-md mx-auto mt-5 text-sm">
-          Build your 5-player team. Outsmart your opponent. Spend wisely. Win the Bid War.
+          Build your 5-player team. Outsmart your opponent. Spend wisely. Win the Showdown.
         </p>
       </motion.div>
 
