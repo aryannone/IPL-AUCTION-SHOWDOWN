@@ -71,6 +71,19 @@ function attachSocket(io, gameManager) {
       }
     });
 
+    socket.on('WITHDRAW_BID', async (_payload, ack) => {
+      try {
+        if (!socket.gameId) return ack?.({ ok: false, error: 'NOT_ELIGIBLE' });
+        const result = await gameManager.withdraw(socket.gameId, socket.user.id);
+        if (!result.ok) {
+          return ack?.({ ok: false, error: result.code, message: result.message });
+        }
+        ack?.({ ok: true });
+      } catch (err) {
+        ack?.({ ok: false, error: 'SERVER_ERROR', message: err.message });
+      }
+    });
+
     socket.on('SYNC_STATE', (_payload, ack) => {
       if (!socket.gameId) return ack?.({ ok: false, error: 'NOT_ELIGIBLE' });
       ack?.({ ok: true, state: gameManager.publicStateFor(socket.gameId) });
