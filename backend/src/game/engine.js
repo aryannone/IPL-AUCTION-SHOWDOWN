@@ -6,6 +6,7 @@ const { computeScore, decideWinner } = require('./scoring');
 
 const STRATEGY_DURATION_MS = 3 * 60 * 1000;
 const AUCTION_ROUND_DURATION_MS = 10 * 1000;
+const ROUND_PREVIEW_MS = 3 * 1000; // "next up" card shown before bidding opens each round
 const MIN_POOL_POINTS = 100; // strictly greater than this
 
 /**
@@ -95,7 +96,9 @@ class GameManager {
       currentBidLakh: null,
       currentBidderUserId: null,
       strategyEndsAt: null,
+      biddingStartsAt: null, // preview window ends / bidding opens
       auctionEndsAt: null,
+      withdrawn: { 1: false, 2: false },
       soldLog: [],
       winnerUserId: undefined,
       results: null,
@@ -260,10 +263,16 @@ class GameManager {
     const playerId = state.auctionOrder[state.currentRound - 1];
     const playerInfo = state.pool.find((p) => p.playerId === playerId);
 
+    const now = Date.now();
     state.currentPlayerId = playerId;
     state.currentBidLakh = playerInfo.reservePriceLakh;
     state.currentBidderUserId = null;
-    state.auctionEndsAt = Date.now() + AUCTION_ROUND_DURATION_MS;
+    state.withdrawn = { 1: false, 2: false };
+    // Every round opens with a fixed preview window (no bidding allowed yet), then
+    // a fresh 10-second bidding window starts. Round 1's preview doubles as the
+    // "auction starting" interface — the frontend labels it differently by round number.
+    state.biddingStartsAt = now + ROUND_PREVIEW_MS;
+    state.auctionEndsAt = state.biddingStartsAt + AUCTION_ROUND_DURATION_MS;
 
     await db.query(
       `UPDATE games SET current_round=$1, current_player_id=$2, current_bid_lakh=$3,
@@ -277,11 +286,12 @@ class GameManager {
       totalRounds: state.auctionOrder.length,
       player: playerInfo,
       currentBidLakh: state.currentBidLakh,
+      biddingStartsAt: state.biddingStartsAt,
       auctionEndsAt: state.auctionEndsAt,
     });
 
     this.clearTimer(state.gameId);
-    const handle = setTimeout(() => this._endRound(state.gameId).catch(this._logErr), AUCTION_ROUND_DURATION_MS);
+    const handle = setTimeout(() => this._endRound(state.gameId).catch(this._logErr), state.auctionEndsAt - now);
     this.timers.set(state.gameId, handle);
   }
 
@@ -294,6 +304,8 @@ class GameManager {
       const slot = this.slotOf(state, userId);
       if (!slot) return this._rejectResult('NOT_ELIGIBLE', 'You are not part of this game.');
       if (Date.now() > state.auctionEndsAt) return this._rejectResult('AUCTION_ENDED', 'This round has already ended.');
+      if (Date.now() < state.biddingStartsAt) return this._rejectResult('BIDDING_NOT_OPEN', 'Bidding has not opened yet.');
+      if (state.withdrawn[slot]) return this._rejectResult('ALREADY_WITHDRAWN', 'You have withdrawn from this round.');
 
       if (!Number.isInteger(bidLakh) || bidLakh <= 0) {
         return this._rejectResult('INVALID_BID', 'Bid must be a positive whole lakh amount.');
@@ -336,16 +348,64 @@ class GameManager {
       );
       await this._logEvent(gameId, state.currentPlayerId, userId, 'BID_PLACED', bidLakh, { slot });
 
-      this.clearTimer(gameId);
-      const handle = setTimeout(() => this._endRound(gameId).catch(this._logErr), AUCTION_ROUND_DURATION_MS);
-      this.timers.set(gameId, handle);
-
       this._broadcast(state, 'BID_UPDATED', {
         currentBidLakh: state.currentBidLakh,
         currentBidderUserId: state.currentBidderUserId,
         bidderSlot: slot,
         auctionEndsAt: state.auctionEndsAt,
       });
+
+      // If the opponent already withdrew from this round, there's nothing left to
+      // contest — sell immediately instead of making the bidder wait out the clock.
+      const oppSlot = slot === 1 ? 2 : 1;
+      if (state.withdrawn[oppSlot]) {
+        this.clearTimer(gameId);
+        await this._finalizeRound(state, { reason: 'OPPONENT_WITHDREW' });
+        return { ok: true, state };
+      }
+
+      this.clearTimer(gameId);
+      const handle = setTimeout(() => this._endRound(gameId).catch(this._logErr), AUCTION_ROUND_DURATION_MS);
+      this.timers.set(gameId, handle);
+
+      return { ok: true, state };
+    });
+  }
+
+  /** Lets a participant concede the current round instead of waiting out the clock. */
+  async withdraw(gameId, userId) {
+    return this.withLock(gameId, async () => {
+      const state = this.games.get(gameId);
+      if (!state) return this._rejectResult('ROOM_NOT_FOUND', 'Game not found.');
+      if (state.status !== 'AUCTION') return this._rejectResult('AUCTION_ENDED', 'Auction is not active.');
+
+      const slot = this.slotOf(state, userId);
+      if (!slot) return this._rejectResult('NOT_ELIGIBLE', 'You are not part of this game.');
+      if (Date.now() > state.auctionEndsAt) return this._rejectResult('AUCTION_ENDED', 'This round has already ended.');
+      if (state.withdrawn[slot]) return this._rejectResult('ALREADY_WITHDRAWN', 'You already withdrew from this round.');
+      if (state.currentBidderUserId === userId) {
+        return this._rejectResult('CANNOT_WITHDRAW', 'You cannot withdraw while you are the highest bidder.');
+      }
+
+      state.withdrawn[slot] = true;
+      await this._logEvent(gameId, state.currentPlayerId, userId, 'PLAYER_WITHDREW', null, { slot });
+      this._broadcast(state, 'PLAYER_WITHDREW', { userId, slot });
+
+      const oppSlot = slot === 1 ? 2 : 1;
+      const opponentIsWinning = state.currentBidderUserId && this.slotOf(state, state.currentBidderUserId) === oppSlot;
+
+      if (opponentIsWinning) {
+        // The other participant is already the highest bidder and now has no
+        // contest left — sell to them immediately.
+        this.clearTimer(gameId);
+        await this._finalizeRound(state, { reason: 'OPPONENT_WITHDREW' });
+      } else if (state.withdrawn[oppSlot]) {
+        // Both participants withdrew before anyone placed a bid -> unsold.
+        this.clearTimer(gameId);
+        await this._finalizeRound(state, { reason: 'BOTH_WITHDREW' });
+      }
+      // Otherwise: only this participant withdrew and nobody has bid yet — the
+      // round keeps running so the opponent still gets their full window to bid.
 
       return { ok: true, state };
     });
@@ -360,53 +420,63 @@ class GameManager {
       const state = this.games.get(gameId);
       if (!state || state.status !== 'AUCTION') return;
       if (Date.now() < state.auctionEndsAt - 50) return; // guard against stray early fire
-
-      const playerInfo = state.pool.find((p) => p.playerId === state.currentPlayerId);
-      const winnerUserId = state.currentBidderUserId;
-
-      if (winnerUserId) {
-        const slot = this.slotOf(state, winnerUserId);
-        const participant = state.participants[slot];
-        participant.budgetLakh -= state.currentBidLakh;
-        participant.team.push({
-          playerId: playerInfo.playerId,
-          name: playerInfo.name,
-          points: playerInfo.points,
-          purchasePriceLakh: state.currentBidLakh,
-        });
-
-        await db.query(
-          `UPDATE game_players SET user_id=$1, purchase_price_lakh=$2, purchased_at=now()
-           WHERE game_id=$3 AND player_id=$4`,
-          [winnerUserId, state.currentBidLakh, gameId, playerInfo.playerId]
-        );
-        await db.query('UPDATE game_participants SET budget_lakh=$1 WHERE game_id=$2 AND user_id=$3',
-          [participant.budgetLakh, gameId, winnerUserId]);
-        await this._logEvent(gameId, playerInfo.playerId, winnerUserId, 'PLAYER_SOLD', state.currentBidLakh, { slot });
-
-        state.soldLog.push({
-          playerId: playerInfo.playerId,
-          name: playerInfo.name,
-          winnerUserId,
-          winnerSlot: slot,
-          priceLakh: state.currentBidLakh,
-        });
-
-        this._broadcast(state, 'PLAYER_SOLD', {
-          player: playerInfo,
-          winnerUserId,
-          winnerSlot: slot,
-          priceLakh: state.currentBidLakh,
-          participants: this._publicParticipants(state),
-        });
-      } else {
-        await this._logEvent(gameId, playerInfo.playerId, null, 'PLAYER_UNSOLD', null, null);
-        state.soldLog.push({ playerId: playerInfo.playerId, name: playerInfo.name, winnerUserId: null, priceLakh: null });
-        this._broadcast(state, 'PLAYER_UNSOLD', { player: playerInfo });
-      }
-
-      await this._startNextRound(state);
+      await this._finalizeRound(state, { reason: 'TIMEOUT' });
     });
+  }
+
+  /**
+   * Resolves the current round — either because the clock ran out or because a
+   * withdrawal made the outcome certain early. Must be called while already
+   * holding this game's lock (from _endRound or from placeBid/withdraw).
+   */
+  async _finalizeRound(state, { reason }) {
+    const gameId = state.gameId;
+    const playerInfo = state.pool.find((p) => p.playerId === state.currentPlayerId);
+    const winnerUserId = state.currentBidderUserId;
+
+    if (winnerUserId) {
+      const slot = this.slotOf(state, winnerUserId);
+      const participant = state.participants[slot];
+      participant.budgetLakh -= state.currentBidLakh;
+      participant.team.push({
+        playerId: playerInfo.playerId,
+        name: playerInfo.name,
+        points: playerInfo.points,
+        purchasePriceLakh: state.currentBidLakh,
+      });
+
+      await db.query(
+        `UPDATE game_players SET user_id=$1, purchase_price_lakh=$2, purchased_at=now()
+         WHERE game_id=$3 AND player_id=$4`,
+        [winnerUserId, state.currentBidLakh, gameId, playerInfo.playerId]
+      );
+      await db.query('UPDATE game_participants SET budget_lakh=$1 WHERE game_id=$2 AND user_id=$3',
+        [participant.budgetLakh, gameId, winnerUserId]);
+      await this._logEvent(gameId, playerInfo.playerId, winnerUserId, 'PLAYER_SOLD', state.currentBidLakh, { slot, reason });
+
+      state.soldLog.push({
+        playerId: playerInfo.playerId,
+        name: playerInfo.name,
+        winnerUserId,
+        winnerSlot: slot,
+        priceLakh: state.currentBidLakh,
+      });
+
+      this._broadcast(state, 'PLAYER_SOLD', {
+        player: playerInfo,
+        winnerUserId,
+        winnerSlot: slot,
+        priceLakh: state.currentBidLakh,
+        participants: this._publicParticipants(state),
+        reason,
+      });
+    } else {
+      await this._logEvent(gameId, playerInfo.playerId, null, 'PLAYER_UNSOLD', null, { reason });
+      state.soldLog.push({ playerId: playerInfo.playerId, name: playerInfo.name, winnerUserId: null, priceLakh: null });
+      this._broadcast(state, 'PLAYER_UNSOLD', { player: playerInfo, reason });
+    }
+
+    await this._startNextRound(state);
   }
 
   async _finishGame(state) {
@@ -515,7 +585,9 @@ class GameManager {
       currentBidLakh: state.currentBidLakh,
       currentBidderUserId: state.currentBidderUserId,
       strategyEndsAt: state.strategyEndsAt,
+      biddingStartsAt: state.biddingStartsAt,
       auctionEndsAt: state.auctionEndsAt,
+      withdrawn: state.withdrawn,
       soldLog: state.soldLog,
       results: state.results || null,
       winnerUserId: state.winnerUserId,
@@ -552,6 +624,11 @@ class GameManager {
       state.currentBidderUserId = g.current_bidder_user_id;
       state.strategyEndsAt = g.strategy_ends_at ? new Date(g.strategy_ends_at).getTime() : null;
       state.auctionEndsAt = g.auction_ends_at ? new Date(g.auction_ends_at).getTime() : null;
+      // A process restart mid-round skips any in-progress preview window and any
+      // withdrawals made in the seconds before the crash — bidding simply reopens
+      // immediately so the round isn't stuck waiting on a clock that already passed.
+      state.biddingStartsAt = Date.now();
+      state.withdrawn = { 1: false, 2: false };
 
       const { rows: parts } = await db.query('SELECT * FROM game_participants WHERE game_id=$1', [g.id]);
       const { rows: users } = await db.query('SELECT * FROM users WHERE id = ANY($1)', [parts.map((p) => p.user_id)]);
