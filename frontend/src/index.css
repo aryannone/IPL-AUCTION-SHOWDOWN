@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+
+body {
+  background: radial-gradient(circle at 50% 0%, #151C2C 0%, #0A0E17 60%);
+  font-family: 'Inter', sans-serif;
+}
+
+.font-display { letter-spacing: 0.02em; }
+
+.glass {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.gold-text {
+  background: linear-gradient(180deg, #F4D06F 0%, #D4AF37 60%, #9C7A1E 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.4); border-radius: 4px; }
+
+button:disabled { cursor: not-allowed; opacity: 0.5; }
