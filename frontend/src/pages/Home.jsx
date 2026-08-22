@@ -4,10 +4,13 @@ import { motion } from 'framer-motion';
 import { useAuth } from '../store/useAuth.jsx';
 import { api } from '../lib/api.js';
 
+const ROLL_NUMBER_REGEX = /^\d{2}[FN][123]\d{6}$/;
+
 export default function Home() {
-  const { token, user, register } = useAuth();
+  const { token, user, register, logout } = useAuth();
   const navigate = useNavigate();
   const [name, setName] = useState('');
+  const [rollNumber, setRollNumber] = useState('');
   const [mode, setMode] = useState(null); // 'create' | 'join'
   const [roomCode, setRoomCode] = useState('');
   const [error, setError] = useState('');
@@ -16,7 +19,11 @@ export default function Home() {
   async function ensureUser() {
     if (user) return token;
     if (!name.trim()) throw new Error('Enter your name first.');
-    await register(name.trim());
+    const roll = rollNumber.trim().toUpperCase();
+    if (!ROLL_NUMBER_REGEX.test(roll)) {
+      throw new Error('Roll number must be in the format YYFTxxxxxx, e.g. 26F1000123 (F = student, N = admin-approved, T = 1/2/3).');
+    }
+    await register(name.trim(), roll);
     return localStorage.getItem('p26_token');
   }
 
@@ -58,14 +65,34 @@ export default function Home() {
         </p>
       </motion.div>
 
-      {!user && (
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Enter your name"
-          maxLength={40}
-          className="w-full max-w-sm glass rounded-xl px-4 py-3 mb-4 text-center outline-none focus:ring-1 focus:ring-gold"
-        />
+      {user ? (
+        <div className="w-full max-w-sm glass rounded-xl px-4 py-3 mb-4 text-center">
+          <div className="text-[10px] uppercase tracking-widest text-white/40">Playing as (only visible to you)</div>
+          <div className="font-semibold mt-1">{user.displayName}</div>
+          <div className="text-white/50 text-sm tracking-widest mt-0.5">{user.rollNumber}</div>
+          <button onClick={logout} className="mt-2 text-xs text-white/30 hover:text-white/60">Not you? Log out</button>
+        </div>
+      ) : (
+        <div className="w-full max-w-sm space-y-3 mb-4">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Enter your name"
+            maxLength={40}
+            className="w-full glass rounded-xl px-4 py-3 text-center outline-none focus:ring-1 focus:ring-gold"
+          />
+          <input
+            value={rollNumber}
+            onChange={(e) => setRollNumber(e.target.value.toUpperCase())}
+            placeholder="Roll number e.g. 26F1000123"
+            maxLength={10}
+            className="w-full glass rounded-xl px-4 py-3 text-center tracking-widest outline-none focus:ring-1 focus:ring-gold"
+          />
+          <div className="text-[11px] text-white/30 text-center px-2">
+            YY = admission year · F/N = student/admin-approved · T = term (1/2/3) · then 6 digits.
+            Using the same roll number again logs you back into the same profile.
+          </div>
+        </div>
       )}
 
       <div className="w-full max-w-sm space-y-3">
