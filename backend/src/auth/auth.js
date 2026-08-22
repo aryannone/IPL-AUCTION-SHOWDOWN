@@ -9,6 +9,51 @@ function hashPassword(pw, salt) {
   return crypto.scryptSync(pw, salt, 64).toString('hex');
 }
 
+/** Roll number format: YY F|N T XXXXXX — e.g. 26F1000123
+ * YY = admission year, F=student / N=admin-approved non-student, T=term(1/2/3), XXXXXX=serial. */
+const ROLL_NUMBER_REGEX = /^\d{2}[FN][123]\d{6}$/;
+
+function parseRollNumber(roll) {
+  const m = ROLL_NUMBER_REGEX.exec(roll);
+  if (!m) return null;
+  return {
+    year: roll.slice(0, 2),
+    kind: roll[2] === 'F' ? 'Student' : 'Admin-approved',
+    term: roll[3],
+    serial: roll.slice(4),
+  };
+}
+
+/**
+ * Registers a new account on first use of a roll number, or logs the same
+ * person back in (issuing a fresh session token) on every subsequent use —
+ * the roll number is the durable identity, not the display name.
+ */
+async function registerOrLogin(displayName, rollNumberRaw) {
+  const name = String(displayName || '').trim().slice(0, 40);
+  const rollNumber = String(rollNumberRaw || '').trim().toUpperCase();
+  if (!name) throw new Error('Name is required.');
+  if (!ROLL_NUMBER_REGEX.test(rollNumber)) {
+    throw new Error('Roll number must match YYFTxxxxxx, e.g. 26F1000123 (F=student or N=admin-approved, T=1/2/3).');
+  }
+
+  const token = newToken();
+  const existing = await db.query('SELECT * FROM users WHERE roll_number=$1', [rollNumber]);
+  if (existing.rowCount > 0) {
+    const { rows } = await db.query(
+      `UPDATE users SET session_token=$1, display_name=$2, last_seen_at=now() WHERE id=$3 RETURNING *`,
+      [token, name, existing.rows[0].id]
+    );
+    return { user: rows[0], token };
+  }
+
+  const { rows } = await db.query(
+    `INSERT INTO users (display_name, session_token, roll_number) VALUES ($1,$2,$3) RETURNING *`,
+    [name, token, rollNumber]
+  );
+  return { user: rows[0], token };
+}
+
 /** Create a new player identity with a display name. Returns { user, token }. */
 async function registerPlayer(displayName) {
   const name = String(displayName || '').trim().slice(0, 40);
@@ -59,4 +104,14 @@ async function loginAdmin(userId, password) {
   return rows[0];
 }
 
-module.exports = { registerPlayer, getUserByToken, requireAuth, requireAdmin, loginAdmin, hashPassword };
+module.exports = {
+  registerPlayer,
+  registerOrLogin,
+  parseRollNumber,
+  ROLL_NUMBER_REGEX,
+  getUserByToken,
+  requireAuth,
+  requireAdmin,
+  loginAdmin,
+  hashPassword,
+};
