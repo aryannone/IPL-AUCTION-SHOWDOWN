@@ -22,7 +22,7 @@ function createApp(gameManager) {
   });
   app.use('/api', apiLimiter);
 
-  app.get('/health', (req, res) => res.json({ ok: true, service: "PARADOX '26 backend" }));
+  app.get('/health', (req, res) => res.json({ ok: true, service: "IPL AUCTION SHOWDOWN backend" }));
 
   app.use('/api/auth', authRoutes);
   app.use('/api/players', playersRoutes);
