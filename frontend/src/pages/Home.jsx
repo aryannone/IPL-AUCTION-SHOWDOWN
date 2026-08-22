@@ -21,7 +21,7 @@ export default function Home() {
     if (!name.trim()) throw new Error('Enter your name first.');
     const roll = rollNumber.trim().toUpperCase();
     if (!ROLL_NUMBER_REGEX.test(roll)) {
-      throw new Error('Roll number must be in the format YYFTxxxxxx, e.g. 26F1000123 (F = student, N = admin-approved, T = 1/2/3).');
+      throw new Error('UID must be in the format YYFTxxxxxx, e.g. 26F1000123 (F = student, N = admin-approved, T = 1/2/3).');
     }
     await register(name.trim(), roll);
     return localStorage.getItem('p26_token');
@@ -84,14 +84,10 @@ export default function Home() {
           <input
             value={rollNumber}
             onChange={(e) => setRollNumber(e.target.value.toUpperCase())}
-            placeholder="Roll number e.g. 26F1000123"
+            placeholder="UID"
             maxLength={10}
             className="w-full glass rounded-xl px-4 py-3 text-center tracking-widest outline-none focus:ring-1 focus:ring-gold"
           />
-          <div className="text-[11px] text-white/30 text-center px-2">
-            YY = admission year · F/N = student/admin-approved · T = term (1/2/3) · then 6 digits.
-            Using the same roll number again logs you back into the same profile.
-          </div>
         </div>
       )}
 
