@@ -1,5 +1,5 @@
 /**
- * Imports the official PARADOX '26 player catalogue into PostgreSQL.
+ * Imports the official IPL AUCTION SHOWDOWN player catalogue into PostgreSQL.
  *
  * Source of truth: ./players.json — a verbatim transcription of the columns
  * [sr_no, set_no, set_name, first_name, surname, country, specialism, status,
